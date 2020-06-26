@@ -1,6 +1,9 @@
 import requests
 import PySimpleGUI as sg
 
+from pprint import pprint
+from linkedin_api import Linkedin
+
 '''
 Basic idea:
 	1. find an interesting profile
@@ -14,10 +17,29 @@ class Session:
 	def __init__(self):
 		self.username = None
 		self.password = None
+		self.authenticated = False
 
 	def sign_in(self, username, password):
 		self.username = username
 		self.password = password
+		return self.authenticate()
+
+	def authenticate(self):
+		try:
+			api = Linkedin(self.username, self.password)
+			self.authenticated = True
+			print(f'api: {api}')
+			return api
+		except Exception as error:
+			error_args = error.args
+			if 'BAD_EMAIL' in error_args:
+				sg.popup('Incorrect email: try again.')
+			elif 'CHALLENGE' in error_args:
+				sg.popup('Challenge')
+			else:
+				sg.popup(error_args)
+
+			return False
 
 	def display_signin_screen(self, VERSION):
 		layout = [
@@ -59,8 +81,12 @@ if __name__ == '__main__':
 
 		elif event == 'Sign in':
 			if values['username'] != '' and values['password'] != '':
-				session.sign_in(values['username'], values['password'])
+				api = session.sign_in(values['username'], values['password'])
 				print('Signing in...')
+
+				if api is False:
+					sg.popup('Incorrect login details!')
+
 			else:
 				sg.popup('Please enter your login details!')
 
