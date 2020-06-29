@@ -7,4 +7,9 @@ config.json
 .idea/misc.xml
 .idea/modules.xml
 .idea/vcs.xml
+.idea
 linkedin_scrape.csv
+dist
+build
+__pycache__
+liscrape.spec
