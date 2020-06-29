@@ -67,7 +67,7 @@ class Session:
 	Session stores the current session's log-in cookie, among other things
 	'''
 	def __init__(self):
-		self.version = '1.0.0'
+		self.version = '1.0.1'
 		self.username = None
 		self.password = None
 		self.authenticated = False
@@ -230,7 +230,9 @@ class Session:
 			[
 				sg.Button('Sign in', font=('Helvetica', 14)), 
 				sg.Checkbox('Remember me', key='remember'),
-				sg.Checkbox('Refresh cookies', key='cookies')],
+				sg.Checkbox('Refresh cookies', key='cookies'),
+				sg.Checkbox('Debug mode', key='debug_mode')
+			],
 				[sg.Output(size=(80, 20), font=('Helvetica', 12))]
 		]
 
@@ -247,24 +249,23 @@ class Session:
 
 	def display_main_screen(self):
 		layout = [
-			[sg.Text(f'Signed in as {self.username}', font=('Helvetica', 14))],
+			[sg.Text(f'Signed in as:', font=('Helvetica Bold', 14)), sg.Text(f'{self.username}', font=('Helvetica', 14))],
 			[sg.Text('Contact to store (URL)\t', font=('Helvetica', 14)), sg.InputText(key="profile_url")],
 			[sg.Button('Store contact', font=('Helvetica', 14)), sg.Text(f'{self.parsed} contacts stored (this session)', key='parsed', font=('Helvetica', 14))],
 			[sg.Text(f'Session path: {self.sheet_path}', font=('Helvetica', 14))],
-			[sg.Text(f'Contacts in file: {self.total_parsed}', font=('Helvetica', 12), key='total_parsed')],
-			[sg.Output(size=(60, 20))]
+			[sg.Output(size=(60, 20))],
+			[sg.Text(f'Contacts in file: {self.total_parsed}', font=('Helvetica', 12), key='total_parsed')]
 		]
 		return sg.Window(
 			title=f'Liscrape version {self.version}', layout=layout, resizable=True, grab_anywhere=True)
 
 
 if __name__ == '__main__':
-	debug = False
-
-	# logging
+	# logging and debug
 	log = 'log.log'
 	logging.basicConfig(filename=log,level=logging.DEBUG,format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
 	logging.info(f'Program started')
+	debug = False
 	
 	# set theme
 	sg.theme('Reddit')
@@ -280,8 +281,11 @@ if __name__ == '__main__':
 			logging.info(f'Sign-in window closed')
 			break
 
+		if values['debug_mode']:
+			debug = True
+
 		if event == 'Sign in':
-			if values['username'] != '' and values['password'] != '' or values['-USERNAME-'] != []:
+			if values['username'] != '' and values['password'] != '' or values['-USERNAME-'] != [] or debug:
 				if values['-USERNAME-'] != []:
 					username = values['-USERNAME-'][0]
 					password = session.load_password_from_config(username)
@@ -291,7 +295,9 @@ if __name__ == '__main__':
 				if not debug:
 					auth_success = session.sign_in(values['username'], values['password'], values['remember'], values['cookies'])
 				else:
+					logging.info(f'Authenticated with debug mode enabled')
 					session.authenticated = True
+					session.username = 'debug user'
 					auth_success = True
 
 				if not auth_success:
@@ -338,7 +344,11 @@ if __name__ == '__main__':
 
 			if event == 'Store contact' and 'profile_url' in values:
 				print(f'Loading {values["profile_url"]}...')
+				if values['profile_url'][-1] == '/':
+					values['profile_url'] = values['profile_url'][0:-1]
+
 				profile = values['profile_url'].split('/')[-1]
+				logging.info(f'Parsing profile {profile}')
 
 				validity_status, time_until_next = session.history.check_validity()
 				if validity_status:
