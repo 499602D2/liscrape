@@ -2,6 +2,14 @@ import os, json, csv, time, logging, traceback
 import PySimpleGUI as sg
 from linkedin_api import Linkedin
 
+'''
+TODO
+- use .xlsx files
+- make logged in user text blue
+- adjust font sizing
+- add dark theme button
+'''
+
 class History:
 	def __init__(self):
 		self.call_count = 0
@@ -67,7 +75,7 @@ class Session:
 	Session stores the current session's log-in cookie, among other things
 	'''
 	def __init__(self):
-		self.version = '1.0.1'
+		self.version = '1.0.2'
 		self.username = None
 		self.password = None
 		self.authenticated = False
@@ -204,7 +212,7 @@ class Session:
 				print(f'Created file: {self.sheet_path}')
 
 		if not self.history.add(profile_dict['Linkedin profile ID']):
-			sg.popup(f'This profile has already been added: avoiding duplicate.', font=('Helvetica', 14), title='Duplicate', keep_on_top=True)
+			sg.popup(f'This profile has already been added: avoiding duplicate.', font=('Helvetica', 11), title='Duplicate', keep_on_top=True)
 			print(f'Duplicate detected ({profile_dict["Linkedin profile ID"]})\n')
 			return
 
@@ -216,11 +224,11 @@ class Session:
 
 	def display_signin_screen(self):
 		layout = [
-			[sg.Text('Sign in to LinkedIn to continue', font=('Helvetica Bold', 14))],
-			[sg.Text('Username (email)\t', font=('Helvetica', 14)), sg.InputText(key="username")],
-			[sg.Text('Password\t\t', font=('Helvetica', 14)), sg.InputText(key="password")],
+			[sg.Text('Sign in to LinkedIn to continue', font=('Helvetica Bold', 11))],
+			[sg.Text('Username (email)\t\t', font=('Helvetica', 11)), sg.InputText(key="username")],
+			[sg.Text('Password\t\t', font=('Helvetica', 11)), sg.InputText(key="password")],
 			[	
-				sg.Text('Select a stored login', font=('Helvetica', 14)),
+				sg.Text('Select a stored login\t', font=('Helvetica', 11)),
 				sg.Listbox(
 					self.load_configuration(), select_mode='LISTBOX_SELECT_MODE_SINGLE', 
 					enable_events=True, size=(40, 1 + len(self.load_configuration())),
@@ -228,19 +236,19 @@ class Session:
 					)
 			],
 			[
-				sg.Button('Sign in', font=('Helvetica', 14)), 
+				sg.Button('Sign in', font=('Helvetica', 11)), 
 				sg.Checkbox('Remember me', key='remember'),
 				sg.Checkbox('Refresh cookies', key='cookies'),
 				sg.Checkbox('Debug mode', key='debug_mode')
 			],
-				[sg.Output(size=(80, 20), font=('Helvetica', 12))]
+				[sg.Output(size=(80, 20), font=('Helvetica', 11))]
 		]
 
 		return sg.Window(f'Liscrape version {self.version}', layout=layout, resizable=True, grab_anywhere=True)
 
 	def display_sheet_screen(self):
 		layout = [
-			[sg.Text('Choose the Excel sheet to store contact information in (.CSV)', font=('Helvetica Bold', 14))],
+			[sg.Text('Choose the Excel sheet to store contact information in (.CSV)', font=('Helvetica Bold', 11))],
 			[sg.FileBrowse(), sg.Input(key="sheet_path")],
 			[sg.Button('OK'), sg.Button('Use default')]
 		]
@@ -249,12 +257,11 @@ class Session:
 
 	def display_main_screen(self):
 		layout = [
-			[sg.Text(f'Signed in as:', font=('Helvetica Bold', 14)), sg.Text(f'{self.username}', font=('Helvetica', 14))],
-			[sg.Text('Contact to store (URL)\t', font=('Helvetica', 14)), sg.InputText(key="profile_url")],
-			[sg.Button('Store contact', font=('Helvetica', 14)), sg.Text(f'{self.parsed} contacts stored (this session)', key='parsed', font=('Helvetica', 14))],
-			[sg.Text(f'Session path: {self.sheet_path}', font=('Helvetica', 14))],
-			[sg.Output(size=(60, 20))],
-			[sg.Text(f'Contacts in file: {self.total_parsed}', font=('Helvetica', 12), key='total_parsed')]
+			[sg.Text(f'Signed in as:', font=('Helvetica Bold', 11)), sg.Text(f'{self.username}', font=('Helvetica', 11))],
+			[sg.Text('Contact to store (URL)\t', font=('Helvetica', 11)), sg.InputText(key="profile_url")],
+			[sg.Button('Store contact', font=('Helvetica', 11)), sg.Text(f'{self.parsed} contacts stored (this session)', key='parsed', font=('Helvetica', 11))],
+			[sg.Output(size=(60, 15))],
+			[sg.Text(f'Contacts in file: {self.total_parsed}', font=('Helvetica', 11), key='total_parsed'), sg.Text(f'Session path: {self.sheet_path}', font=('Helvetica', 11))]
 		]
 		return sg.Window(
 			title=f'Liscrape version {self.version}', layout=layout, resizable=True, grab_anywhere=True)
@@ -264,14 +271,14 @@ if __name__ == '__main__':
 	# logging and debug
 	log = 'log.log'
 	logging.basicConfig(filename=log,level=logging.DEBUG,format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
-	logging.info(f'Program started')
 	debug = False
 	
 	# set theme
-	sg.theme('Reddit')
+	sg.theme('SystemDefault') # 'Reddit'
 
 	# create session, display sign-in screen
 	session = Session()
+	logging.info(f'Program started')
 
 	# sign-in eventloop
 	while True:
@@ -342,13 +349,16 @@ if __name__ == '__main__':
 				logging.info(f'Exiting main event loop gracefully')
 				break
 
-			if event == 'Store contact' and 'profile_url' in values:
-				print(f'Loading {values["profile_url"]}...')
-				if values['profile_url'][-1] == '/':
-					values['profile_url'] = values['profile_url'][0:-1]
+			if event == 'Store contact' and (values['profile_url'] != '' or debug):
+				if not debug:
+					print(f'Loading {values["profile_url"]}...')
+					if values['profile_url'][-1] == '/':
+						values['profile_url'] = values['profile_url'][0:-1]
 
-				profile = values['profile_url'].split('/')[-1]
-				logging.info(f'Parsing profile {profile}')
+					profile = values['profile_url'].split('/')[-1]
+					logging.info(f'Parsing profile {profile}')
+				else:
+					print(f'Parsing sample debug profile...')
 
 				validity_status, time_until_next = session.history.check_validity()
 				if validity_status:
@@ -357,7 +367,7 @@ if __name__ == '__main__':
 						contact_info = session.application.get_profile_contact_info(profile)
 						session.store_profile(profile, contact_info)
 					else:
-						profile = {'lastName': 'SquarePants', 'firstName': 'SpongeBob', 'industryName': 'Professional retard', }
+						profile = {'lastName': 'SquarePants', 'firstName': 'SpongeBob', 'industryName': 'Professional retard', 'profile_id': 'DEBUG'}
 						contact_info = {'email_address': 'squarepants@bikinibottom.com', 'websites': ['square@pants.bk'], 'twitter': '@pants', 'phone_numbers': ['+001']}
 						session.store_profile(profile, contact_info)
 
@@ -366,9 +376,8 @@ if __name__ == '__main__':
 					session.window['parsed'].update(f'{session.parsed} {"contact" if session.parsed == 1 else "contacts"} stored (this session)')
 					session.window['total_parsed'].update(f'Contacts in file: {session.total_parsed}')
 
-					print(f'Call count: {session.history.call_count}')
 				else:
-					sg.popup(f'API call limit reached. Try again in {time_until_next}.', font=('Helvetica', 14), title='Limit reached', keep_on_top=True)
+					sg.popup(f'API call limit reached. Try again in {time_until_next}.', font=('Helvetica', 11), title='Limit reached', keep_on_top=True)
 					logging.info(f'API call limit reached: time until next call {time_until_next}. Limit: {session.history.hourly_limit} calls per hour.')
 
 	except Exception as error:
