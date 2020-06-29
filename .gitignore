@@ -7,3 +7,4 @@ config.json
 .idea/misc.xml
 .idea/modules.xml
 .idea/vcs.xml
+linkedin_scrape.csv
