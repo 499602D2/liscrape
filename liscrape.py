@@ -1,25 +1,23 @@
+# -*- coding: utf-8 -*-
 import os, json
 import PySimpleGUI as sg
-
-from linkedin_api import Linkedin
+from linkedin_v2 import linkedin
 
 '''
-Basic idea:
-	1. find an interesting profile
-	2. drag link into UI
-	3. info automatically pulled from Linkedin and inserted into a CSV for automatic import into CRM
-
 To-do
 	Package with PyInstaller
 '''
 class Session:
-	'''
-	Session stores the current session's log-in cookie, among other things
-	'''
 	def __init__(self):
-		self.username = None
-		self.password = None
+		self.application_name = None
 		self.authenticated = False
+		self.application = None
+		
+		self.consumer_key = None
+		self.consumer_secret = None
+		self.user_token = None
+		self.user_secret = None
+		
 		self.window = None
 		self.sheet_path = None
 		self.parsed = 0
@@ -33,58 +31,92 @@ class Session:
 				config = json.load(config_file)
 			except:
 				os.remove('config.json')
-				return ()
+				return []
 
-			return tuple(config['users'].keys()) if len(config['users'].keys()) > 0 else ()
+			keys = []
+			for key in config:
+				if config[key]['app_name'] != '':
+					keys.append(config[key]['app_name'])
+				else:
+					keys.append(key)
 
-	def load_password_from_config(self, username):
+			return keys if len(keys) > 0 else ()
+
+	def load_password_from_config(self, consumer_key):
 		with open('config.json', 'r') as config_file:
 			config = json.load(config_file)
 
+		# if key not found, we're using an app name
+		if consumer_key not in config.keys():
+			for key in config:
+				if config[key]['app_name'] == consumer_key:
+					return config[key]
+
 		try:
-			return config['users'][username]
+			return config[consumer_key]
 		except:
 			sg.popup('Error finding password from configuration!')
 			raise Exception('Error finding password from configuration!')
 
-	def store_login(self, username, password):
+	def store_login(self, app_name, key_dict):
+		consumer_key = key_dict['consumer_key']
 		if not os.path.isfile('config.json'):
 			with open('config.json', 'w') as config_file:
 				config = {}
-				config['users'] = {}
+				config[consumer_key] = {}
 		else:
 			with open('config.json', 'r') as config_file:
 				config = json.load(config_file)
+				if key_dict['consumer_key'] not in config.keys():
+					config[consumer_key] = {}
 
-		config['users'][username] = password
+		config[consumer_key]['app_name'] = app_name
+		for key, val in key_dict.items():
+			config[consumer_key][key] = val
+
 		with open('config.json', 'w') as config_file:
 			json.dump(config, config_file, indent=4)
 
 		return True
 
-	def sign_in(self, username, password, remember_login, refresh_cookies):
-		self.username = username
-		self.password = password
-		auth_success = self.authenticate(refresh_cookies)
+	def sign_in(self, app_name, key_dict, remember_login):
+		if app_name == '':
+			app_name = key_dict['consumer_key'][0:6]
 
-		# DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG 
-		self.authenticated = True
+		self.consumer_key = key_dict['consumer_key']
+		self.consumer_secret = key_dict['consumer_secret']
+		self.user_token = key_dict['user_token']
+		self.user_secret = key_dict['user_secret']
+
+		auth_success = self.authenticate()
+
 		print(f'remember_login: {remember_login}, type: {type(remember_login)}')
 		if self.authenticated and remember_login:
-			success = self.store_login(username, password)
+			self.application_name = app_name
+
+			success = self.store_login(app_name, key_dict)
 			if success:
 				print('Login stored into config file successfully!')
 
 		return auth_success
 
-	def authenticate(self, refresh_cookies):
+	def authenticate(self):
 		try:
-			api = Linkedin(self.username, self.password, debug=True, refresh_cookies=refresh_cookies)
+			RETURN_URL = 'http://localhost:8000'
+			authentication = linkedin.LinkedInDeveloperAuthentication(
+				self.consumer_key, self.consumer_secret, 
+				self.user_token, self.user_secret, 
+				RETURN_URL, linkedin.PERMISSIONS.enums.values()
+			)
+				
+			sg.popup(f'Authentication: {authentication}')
+
 			self.authenticated = True
-			print(f'api: {api}')
-			return api
+			return linkedin.LinkedInApplication(authentication)
+
 		except Exception as error:
 			error_args = error.args
+
 			if 'BAD_EMAIL' in error_args:
 				sg.popup('Incorrect email: try again.')
 			elif 'CHALLENGE' in error_args:
@@ -101,21 +133,23 @@ class Session:
 
 	def display_signin_screen(self, VERSION):
 		layout = [
-			[sg.Text('Sign in to LinkedIn to continue', font=('Helvetica Bold', 14))],
-			[sg.Text('Username (email)\t', font=('Helvetica', 14)), sg.InputText(key="username")],
-			[sg.Text('Password\t\t', font=('Helvetica', 14)), sg.InputText(key="password")],
+			[sg.Text('LinkedIn developer authentication', font=('Helvetica Bold', 14))],
+			[sg.Text('Application name\t', font=('Helvetica', 14)), sg.InputText(key="name")],
+			[sg.Text('Consumer key\t', font=('Helvetica', 14)), sg.InputText(key="consumer_key")],
+			[sg.Text('Consumer secret\t', font=('Helvetica', 14)), sg.InputText(key="consumer_secret")],
+			[sg.Text('User token\t', font=('Helvetica', 14)), sg.InputText(key="user_token")],
+			[sg.Text('User secret\t', font=('Helvetica', 14)), sg.InputText(key="user_secret")],
 			[	
 				sg.Text('Select a stored login', font=('Helvetica', 14)),
 				sg.Listbox(
-					self.load_configuration(), select_mode='LISTBOX_SELECT_MODE_SINGLE', 
-					enable_events=True, size=(40, 1 + len(self.load_configuration())),
-					key='-USERNAME-'
+					self.load_configuration(), select_mode='LISTBOX_SELECT_MODE_SINGLE', size=(40, 2 + len(self.load_configuration())),
+					key='-CONSUMER_KEY-', enable_events=True
 					)
 			],
 			[
 				sg.Button('Sign in', font=('Helvetica', 14)), 
-				sg.Checkbox('Remember me', key='remember'),
-				sg.Checkbox('Refresh cookies', key='cookies')]
+				sg.Checkbox('Remember me', key='remember')
+			]
 		] # [sg.Output(size=(80, 20))]
 
 		return sg.Window(f'Liscrape version {VERSION}', layout=layout, resizable=True, grab_anywhere=True)
@@ -131,10 +165,11 @@ class Session:
 
 	def display_main_screen(self, VERSION):
 		layout = [
-			[sg.Text(f'Signed in as {self.username}', font=('Helvetica', 14))],
+			[sg.Text(f'Using application {self.application_name}', font=('Helvetica', 14))],
 			[sg.Text('Contact to store (URL)\t', font=('Helvetica', 14)), sg.InputText(key="profile_url")],
 			[sg.Button('Store contact', font=('Helvetica', 14)), sg.Text(f'{self.parsed} contacts stored')],
-			[sg.Text(f'Storing into {self.sheet_path}', font=('Helvetica', 12))]
+			[sg.Text(f'Storing into {self.sheet_path}', font=('Helvetica', 12))],
+			[sg.Text(f'(c) 2020 Icotak Ltd.', font=('Helvetica', 10))]
 		] # [sg.Output(size=(60, 20))]
 
 		return sg.Window(
@@ -142,7 +177,7 @@ class Session:
 
 
 if __name__ == '__main__':
-	VERSION = 0.2
+	VERSION = 0.3
 	
 	# set theme
 	sg.theme('Reddit')
@@ -160,16 +195,28 @@ if __name__ == '__main__':
 			break
 
 		if event == 'Sign in':
-			if values['username'] != '' and values['password'] != '' or values['-USERNAME-'] != []:
-				if values['-USERNAME-'] != []:
-					username = values['-USERNAME-'][0]
-					password = session.load_password_from_config(username)
-					values['remember'] = False
+			login_fields = (
+				values['consumer_key'], values['consumer_secret'],
+				values['user_token'], values['user_secret'])
 
-				api = session.sign_in(values['username'], values['password'], values['remember'], values['cookies'])
+			print(f'Login fields: {login_fields}')
+			print(f'Values: {values}')
+			print(f'Values[consumer_key]: {values["-CONSUMER_KEY-"]}')
+
+			if '' not in login_fields or values['-CONSUMER_KEY-'] != []:
+				if values['-CONSUMER_KEY-'] != []:
+					consumer_key = values['-CONSUMER_KEY-'][0]
+					key_dict = session.load_password_from_config(consumer_key)
+					values['remember'] = False
+				else:
+					key_dict = {}
+					for key in ('consumer_key', 'consumer_secret', 'user_token', 'user_secret'):
+						key_dict[key] = values[key]
+
+				session.application = session.sign_in(values['name'], key_dict, values['remember'])
 				print('Signing in...')
 
-				if api is False:
+				if session.application is None:
 					sg.popup('Incorrect login details!')
 				else: 
 					# successful sign-in, update UI
@@ -198,7 +245,7 @@ if __name__ == '__main__':
 
 		print('You entered ', values)
 
-	if session.sheet_path == None:
+	if session.sheet_path == None and session.authenticated:
 		session.window.close()
 		sg.popup('Error: no Excel sheet path defined!')
 
@@ -208,15 +255,15 @@ if __name__ == '__main__':
 		if event == sg.WIN_CLOSED:
 			break
 
-		if 'profile_url' in values:
+		if event == 'Store contact' and 'profile_url' in values:
 			print(f'Loading {values["profile_url"]}...')
 			profile = values['profile_url'].split('/')[-1]
 
-			profile = api.get_profile(profile)
+			profile = session.application.get_profile(profile)
 			print(profile)
 			print('\n\n')
 
-			contact_info = api.get_profile_contact_info(profile)
+			contact_info = session.application.get_profile_contact_info(profile)
 			print(contact_info)
 
 
