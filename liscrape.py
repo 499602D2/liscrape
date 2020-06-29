@@ -357,8 +357,8 @@ if __name__ == '__main__':
 						contact_info = session.application.get_profile_contact_info(profile)
 						session.store_profile(profile, contact_info)
 					else:
-						profile = {'lastName': 'Meikäläinen', 'firstName': 'Matti', 'industryName': 'Professional retard', }
-						contact_info = {'email_address': 'matti@meikalainen.com', 'websites': ['matti.fi'], 'twitter': '@matti', 'phone_numbers': ['+358400123456']}
+						profile = {'lastName': 'SquarePants', 'firstName': 'SpongeBob', 'industryName': 'Professional retard', }
+						contact_info = {'email_address': 'squarepants@bikinibottom.com', 'websites': ['square@pants.bk'], 'twitter': '@pants', 'phone_numbers': ['+001']}
 						session.store_profile(profile, contact_info)
 
 					# clear input
