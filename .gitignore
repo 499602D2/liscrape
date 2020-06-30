@@ -14,3 +14,5 @@ build
 log.log
 __pycache__
 liscrape.spec
+linkedin_scrape.xlsx
+.~lock.linkedin_scrape.xlsx#
