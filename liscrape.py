@@ -78,7 +78,7 @@ class Session:
 	Session stores the current session's log-in cookie, among other things
 	'''
 	def __init__(self):
-		self.version = '1.1.0'
+		self.version = '1.1.1'
 		self.username = None
 		self.password = None
 		self.authenticated = False
@@ -257,7 +257,6 @@ class Session:
 
 		elif self.sheet_type == 'excel':
 			df = pd.DataFrame(profile_dict, columns=[val for val in column_map.values()], index=[self.total_parsed])
-			logging.info(f'Storing dataframe:\n{df.head(6)}')
 			
 			if os.path.isfile(self.sheet_path):
 				df = pd.concat([pd.read_excel(self.sheet_path), df])
@@ -281,7 +280,6 @@ class Session:
 				'''
 
 		logging.info(f'Stored profile {profile_dict["Linkedin profile ID"]} to {self.sheet_path}')
-		print(f'Stored {profile_dict["Linkedin profile ID"]}\n')
 
 		self.parsed += 1
 		self.total_parsed += 1
@@ -483,7 +481,7 @@ if __name__ == '__main__':
 							session.store_profile(profile, contact_info)
 						except Exception as error:
 							logging.exception(f'Error loading profile: {error}')
-							traceback.format_exc(error)
+							sg.popup(traceback.format_exc(error))
 							continue
 
 					# clear input
