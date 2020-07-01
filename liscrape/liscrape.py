@@ -1,6 +1,8 @@
-import os, json, csv, time, logging, traceback, random, threading
+import os, json, csv, time, logging, traceback, random
 import PySimpleGUI as sg
 import pandas as pd
+
+from openpyxl import load_workbook
 from linkedin_api import Linkedin
 
 '''
@@ -23,7 +25,8 @@ class History:
 	History class loads, stores, and enforces a simple API call-limit to prevent
 	users from getting themselves banned by spamming Linkedin's API.
 	'''
-	def __init__(self):
+	def __init__(self, session):
+		self.parent_session = session
 		self.call_count = 0
 		self.hourly_limit = 60
 		self.history = {}
@@ -68,6 +71,7 @@ class History:
 		return not_added if not ignore_duplicates else True
 
 	def check_validity(self):
+		return True, None if self.parent_session.debug
 		if self.call_count > self.hourly_limit:
 			filtered_history = {}
 			for key, val in self.history.items():
@@ -139,7 +143,7 @@ class GUI:
 
 class Session:
 	def __init__(self):
-		self.version = '1.2.0'
+		self.version = '1.2.1'
 		self.username = None
 		self.password = None
 		self.authenticated = False
@@ -157,9 +161,12 @@ class Session:
 		self.gui = GUI(self)
 
 		# history, load validity
-		self.history = History()
+		self.history = History(self)
 		self.history.history = self.history.load()
 		self.history.check_validity()
+
+		# threads
+		self.threads = {}
 
 		# additional options
 		self.ignore_duplicates = False
@@ -259,26 +266,17 @@ class Session:
 
 			return False
 
-
-	def store_profile(self, profile):
-		def set_diff(dict, full_set):
-			''' 
-			Calculate the difference between the full key set and the provided key set.
-			Return a full set with the missing keys' values set to Nonetypes.
-			'''
-			ignored_keys = {key for key in full_set if key not in dict.keys()}
-			return full_set.difference(ignored_keys)
-
-		# perform the API calls
+	# perform the API calls
+	def linkedin_api_call(self, profile):
 		if not self.debug:
 			try:
 				# two API requests: profile and contact info
-				profile = session.application.get_profile(profile)
-				contact_info = session.application.get_profile_contact_info(profile)
+				profile = self.application.get_profile(profile)
+				contact_info = self.application.get_profile_contact_info(profile)
 			except Exception as error:
 				logging.exception(f'Error loading profile: {error}')
 				traceback.format_exc(error)
-				return # message from thread here
+				return None
 		else:
 			try:
 				# a sample profile for debugging purposes
@@ -287,13 +285,25 @@ class Session:
 			except Exception as error:
 				logging.exception(f'Error loading profile: {error}')
 				sg.popup(traceback.format_exc(error))
-				return # message from thread here
+				return None
+
+		self.store_profile(profile, contact_info)
+
+
+	def store_profile(self, profile, contact_info):
+		def set_diff(dict, full_set):
+			''' 
+			Calculate the difference between the full key set and the provided key set.
+			Return the keys that exist in the dictionary, so the missing ones can be
+			set to Nonetypes.
+			'''
+			ignored_keys = {key for key in full_set if key not in dict.keys()}
+			return full_set.difference(ignored_keys)
 
 		# the full set of keys a complete profile would have
 		profile_keys_full = {
 			'firstName', 'lastName', 'profile_id', 'headline', 
-			'summary', 'industryName', 'geoCountryName', 'languages'
-			}
+			'summary', 'industryName', 'geoCountryName', 'languages'}
 		contact_keys_full = {'birthdate', 'email_address', 'phone_numbers'}
 
 		# if the profile is lacking keys, replace their values with Nonetypes
@@ -331,7 +341,7 @@ class Session:
 		# same as above, but for contact keys
 		for key in contact_keys_full:
 			if key == 'phone_numbers' and key in contact_keys:
-				contact_info[key] = ','.join(contact_info['phone_numbers'])
+				contact_info[key] = u','.join(contact_info['phone_numbers'])
 			
 			if key in contact_keys:
 				profile_dict[column_map[key]] = contact_info[key]
@@ -357,28 +367,34 @@ class Session:
 				csv.DictWriter(csv_file, fieldnames=field_names).writerow(profile_dict)
 
 		elif self.sheet_type == 'excel':
+			# convert dictionary to a dataframe
 			df = pd.DataFrame(profile_dict, columns=[val for val in column_map.values()], index=[self.total_parsed])
-			
+
+			# store (file exists)
 			if os.path.isfile(self.sheet_path):
-				df = pd.concat([pd.read_excel(self.sheet_path), df])
-				df.to_excel(self.sheet_path, sheet_name='Sheet1', index=False)
+				book = load_workbook(self.sheet_path)
+				with pd.ExcelWriter(self.sheet_path, engine='openpyxl') as writer:
+					writer.book = book
+					writer.sheets = {ws.title: ws for ws in book.worksheets}
+					for sheetname in writer.sheets:
+						df.to_excel(
+							writer, sheet_name=sheetname, 
+							startrow=writer.sheets[sheetname].max_row, 
+							index = False, header= False)
 			else:
-				df.to_excel(self.sheet_path, sheet_name='Sheet1', index=False)
-				'''
 				try:
-					writer = pd.ExcelWriter(self.sheet_path, engine='xlsxwriter')
-					workbook = writer.book
-					worksheet = writer.sheets['Sheet1']
+					with pd.ExcelWriter(self.sheet_path, engine='openpyxl') as writer:
+						df.to_excel(writer, sheet_name='Sheet1', index=False, header=True)
+						workbook = writer.book
+						worksheet = writer.sheets['Sheet1']
 
-					# format column as text: https://xlsxwriter.readthedocs.io/format.html
-					format_text = workbook.add_format({'num_format': '@'})
-					worksheet.set_column('K:K', None, format_text)
-					writer.save()
+						# format column as text: https://xlsxwriter.readthedocs.io/format.html
+						format_text = workbook.add_format({'num_format': '@'})
+						worksheet.set_column('K:K', None, format_text)
 
-					logging.info('Column num_format set to text for columns K:K')
+						logging.info('Column num_format set to text for columns K:K')
 				except Exception as e:
 					logging.exception(f'Error setting column format: {e}')
-				'''
 
 		print(f'Stored profile {profile_dict["Linkedin profile ID"]} to {self.sheet_path}\n')
 		logging.info(f'Stored profile {profile_dict["Linkedin profile ID"]} to {self.sheet_path}')
@@ -390,10 +406,13 @@ class Session:
 if __name__ == '__main__':
 	# logging and debug
 	log = 'log.log'
-	logging.basicConfig(filename=log,level=logging.DEBUG,format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
+	logging.basicConfig(
+		filename=log, level=logging.DEBUG,
+		format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S'
+	)
 
 	# set theme
-	sg.theme('SystemDefault') # 'Reddit'
+	sg.theme('SystemDefault')
 
 	# create session, display sign-in screen
 	session = Session()
@@ -410,6 +429,7 @@ if __name__ == '__main__':
 
 		if values['debug_mode']:
 			session.debug = True
+			session.history.hourly_limit = None
 
 		if event == 'theme_switch': 
 			if values['theme_switch']:
@@ -421,13 +441,12 @@ if __name__ == '__main__':
 
 		if event == 'show_log':
 			if session.get_log_length() == 0:
-				pass
+				session.gui.window['output_window'].update('-- Log is empty --')
 			else:
 				with open('log.log', 'r') as log_file:
 					log_text = log_file.read()
 
 				session.gui.window['output_window'].update(log_text)
-
 
 		if event == 'Sign in':
 			if values['username'] != '' and values['password'] != '' or values['-USERNAME-'] != [] or session.debug:
@@ -444,6 +463,16 @@ if __name__ == '__main__':
 					session.username = 'debug user'
 					session.authenticated = True
 					auth_success = True
+
+					session.sheet_type = session.default_sheet_type
+					if session.sheet_type == 'csv':
+						session.sheet_path = 'linkedin_scrape.csv'
+					elif session.sheet_type == 'excel':
+						session.sheet_path = 'linkedin_scrape.xlsx'
+
+					session.gui.window.close()
+					session.gui.display_main_screen()
+					break
 
 				if not auth_success:
 					sg.popup('Incorrect login details!', title='Incorrect login', keep_on_top=True)
@@ -513,7 +542,7 @@ if __name__ == '__main__':
 
 				validity_status, time_until_next = session.history.check_validity()
 				if validity_status:
-					session.store_profile(profile)
+					session.linkedin_api_call(profile)
 
 					# clear input
 					session.gui.window['profile_url'].update('')
