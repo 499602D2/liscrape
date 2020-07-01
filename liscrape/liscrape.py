@@ -71,7 +71,9 @@ class History:
 		return not_added if not ignore_duplicates else True
 
 	def check_validity(self):
-		return True, None if self.parent_session.debug
+		if self.parent_session.debug:
+			return True, None
+
 		if self.call_count > self.hourly_limit:
 			filtered_history = {}
 			for key, val in self.history.items():
@@ -157,6 +159,10 @@ class Session:
 		self.total_parsed = 0
 		self.parsed = 0
 
+		# additional options
+		self.ignore_duplicates = False
+		self.debug = False
+
 		# gui
 		self.gui = GUI(self)
 
@@ -164,13 +170,6 @@ class Session:
 		self.history = History(self)
 		self.history.history = self.history.load()
 		self.history.check_validity()
-
-		# threads
-		self.threads = {}
-
-		# additional options
-		self.ignore_duplicates = False
-		self.debug = False
 
 
 	def get_log_length(self):
