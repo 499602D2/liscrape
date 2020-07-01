@@ -1,4 +1,4 @@
-import os, json, csv, time, logging, traceback, threading, queue, random
+import os, json, csv, time, logging, traceback, random
 import PySimpleGUI as sg
 import pandas as pd
 from linkedin_api import Linkedin
@@ -166,8 +166,6 @@ class Session:
 		self.password = password
 		auth_success = self.authenticate(refresh_cookies)
 
-		# DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG 
-		self.authenticated = True
 		if self.authenticated and remember_login:
 			success = self.store_login(username, password)
 			if success:
@@ -279,6 +277,7 @@ class Session:
 					logging.exception(f'Error setting column format: {e}')
 				'''
 
+		print(f'Stored profile {profile_dict["Linkedin profile ID"]} to {self.sheet_path}\n')
 		logging.info(f'Stored profile {profile_dict["Linkedin profile ID"]} to {self.sheet_path}')
 
 		self.parsed += 1
@@ -388,8 +387,8 @@ if __name__ == '__main__':
 					auth_success = session.sign_in(values['username'], values['password'], values['remember'], values['cookies'])
 				else:
 					logging.info(f'Authenticated with debug mode enabled')
-					session.authenticated = True
 					session.username = 'debug user'
+					session.authenticated = True
 					auth_success = True
 
 				if not auth_success:
