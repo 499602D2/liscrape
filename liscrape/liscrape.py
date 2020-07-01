@@ -15,9 +15,6 @@ Perf/logic
 
 UI
 - adjust font sizing
-- add OS/window size specific columning (tabs)
-- add "debug settings" button -> window
-	- clear config
 '''
 
 class History:
