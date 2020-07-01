@@ -1,2 +1,2 @@
 # Liscrape
- Automating Linkedin profile scraping with Python 3
+Simplifying and automating Linkedin profile scraping with Python 3
