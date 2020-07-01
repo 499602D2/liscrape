@@ -31,10 +31,11 @@ class History:
 		self.hourly_limit = 60
 		self.history = {}
 
+
 	def load(self):
 		if not os.path.isfile('config.json'):
 			with open('config.json', 'w') as config_file:
-				config = {'users': {}, 'history': {}}
+				config = {'users': {}, 'history': {}, 'theme': None}
 				json.dump(config, config_file, indent=4)
 			
 			return {}
@@ -49,6 +50,7 @@ class History:
 				os.remove('config.json')
 				return {}
 
+
 	def store(self):
 		if os.path.isfile('config.json'):
 			with open('config.json', 'r') as config_file:
@@ -59,9 +61,10 @@ class History:
 				json.dump(config, config_file, indent=4)
 		else:
 			with open('config.json', 'w') as config_file:
-				config = {'users': {}, 'history': {}}
+				config = {'users': {}, 'history': {}, 'theme': None}
 				config['history'] = self.history
 				json.dump(config, config_file, indent=4)
+
 
 	def add(self, user_id, ignore_duplicates):
 		self.call_count += 1
@@ -69,6 +72,7 @@ class History:
 		self.history[time.time()] = user_id
 
 		return not_added if not ignore_duplicates else True
+
 
 	def check_validity(self):
 		if self.parent_session.debug:
@@ -93,14 +97,16 @@ class GUI:
 	def __init__(self, session):
 		self.parent_session = session
 		self.window = None
+		self.secondary_window = None
+
 
 	def display_signin_screen(self):
 		layout = [
 			[sg.Text('Sign in to Linkedin to continue', font=('Helvetica Bold', 11))],
-			[sg.Text('Username (email)\t\t', font=('Helvetica', 11)), sg.InputText(key="username")],
-			[sg.Text('Password\t\t', font=('Helvetica', 11)), sg.InputText(key="password")],
+			[sg.Text('Username (email)', font=('Helvetica', 11), size=(15, None)), sg.InputText(key="username")],
+			[sg.Text('Password', font=('Helvetica', 11), size=(15, None)), sg.InputText(key="password")],
 			[	
-				sg.Text('Select a stored login\t', font=('Helvetica', 11)),
+				sg.Text('Select a stored login', size=(15, None), font=('Helvetica', 11)),
 				sg.Listbox(
 					self.parent_session.load_configuration(), select_mode='LISTBOX_SELECT_MODE_SINGLE', 
 					enable_events=True, size=(40, 1 + len(self.parent_session.load_configuration())),
@@ -112,13 +118,18 @@ class GUI:
 				sg.Checkbox('Remember me', key='remember'),
 				sg.Checkbox('Refresh cookies', key='cookies'),
 				sg.Checkbox('Debug mode', key='debug_mode'),
-				sg.Checkbox('Dark theme', key='theme_switch', enable_events=True),
+				sg.Checkbox('Dark theme' if self.parent_session.load_theme() == 'SystemDefault' else 'Light theme', key='theme_switch', enable_events=True),
 			],
 				[sg.Output(size=(80, 20), font=('Helvetica', 11), key='output_window')],
-				[sg.Button('Show log', font=('Helvetica', 11), key='show_log'), sg.Text(f'Log file length: {self.parent_session.get_log_length()} lines', font=('Helvetica', 11))]
+				[
+					sg.Button('Tools', font=('Helvetica', 11), key='debug_screen'),
+					sg.Button('Show log', font=('Helvetica', 11), key='show_log'), 
+					sg.Text(f'Log file length: {self.parent_session.get_log_length()} lines', font=('Helvetica', 11))
+				]
 		]
 
 		self.window = sg.Window(f'Liscrape version {self.parent_session.version}', layout=layout, resizable=True, grab_anywhere=True)
+
 
 	def display_sheet_screen(self):
 		layout = [
@@ -130,13 +141,28 @@ class GUI:
 
 		self.window = sg.Window(f'Liscrape version {self.parent_session.version}', layout)
 
+
+	def display_debug_screen(self):
+		layout = [
+			[sg.Text('Debug settings and tools', font=('Helvetica', 11))],
+			[sg.Text('Clear configuration file', font=('Helvetica', 11), size=(20, None)), sg.Button('Clear config')],
+			[sg.Text('Clear all stored contacts', font=('Helvetica', 11), size=(20, None)), sg.Button('Remove contacts')],
+			[sg.Text('Run automated tests', font=('Helvetica', 11), size=(20, None)), sg.Button('Run tests')]
+		]
+
+		self.secondary_window = sg.Window(f'Liscrape version {self.parent_session.version}', layout)
+
+
 	def display_main_screen(self):
 		layout = [
 			[sg.Text(f'Signed in as:', font=('Helvetica', 11)), sg.Text(f'{self.parent_session.username}', font=('Helvetica', 11), text_color='Blue')],
-			[sg.Text('Contact to store (URL)\t', font=('Helvetica', 11)), sg.InputText(key="profile_url")],
+			[sg.Text('Contact to store (URL)', font=('Helvetica', 11)), sg.InputText(key="profile_url")],
 			[sg.Button('Store contact', font=('Helvetica', 11)), sg.Text(f'{self.parent_session.parsed} contacts stored (this session)\t', key='parsed', font=('Helvetica', 11))],
 			[sg.Output(size=(60, 15))],
-			[sg.Text(f'Contacts in file: {self.parent_session.total_parsed}\t', font=('Helvetica', 11), key='total_parsed'), sg.Text(f'Session path: {self.parent_session.sheet_path}', font=('Helvetica', 11))]
+			[
+				sg.Text(f'Contacts in file: {self.parent_session.total_parsed}', font=('Helvetica', 11), key='total_parsed', size=(15, None)), 
+				sg.Text(f'Session path: {self.parent_session.sheet_path}', font=('Helvetica', 11))
+			]
 
 		]
 		self.window = sg.Window(title=f'Liscrape version {self.parent_session.version}', 
@@ -145,7 +171,7 @@ class GUI:
 
 class Session:
 	def __init__(self):
-		self.version = '1.2.1'
+		self.version = '1.2.2'
 		self.username = None
 		self.password = None
 		self.authenticated = False
@@ -180,6 +206,24 @@ class Session:
 			return sum(1 for row in log_file)
 
 
+	def remove_contacts(self):
+		if os.path.isfile('linkedin_scrape.xlsx'):
+			os.remove('linkedin_scrape.xlsx')
+			sg.popup(f'Contacts file linkedin_scrape.xlsx removed!')
+
+		if os.path.isfile('linkedin_scrape.csv'):
+			os.remove('linkedin_scrape.csv')
+			sg.popup(f'Contacts file linkedin_scrape.xlsx csv!')
+
+
+	def clear_config(self):
+		if os.path.isfile('config.json'):
+			with open('config.json', 'w') as config_file:
+				config = {'users': {}, 'history': {}, 'theme': None}
+				json.dump(config, config_file, indent=4)
+				sg.popup('Configuration file cleared!')
+
+
 	def load_sheet_length(self):
 		if not os.path.isfile(self.sheet_path):
 			logging.info(f'Sheet {self.sheet_path} does not exist: returning total_parsed=0')
@@ -210,6 +254,46 @@ class Session:
 			return tuple(config['users'].keys()) if len(config['users'].keys()) > 0 else ()
 
 
+	def load_theme(self):
+		if not os.path.isfile('config.json'):
+			return 'SystemDefault'
+
+		with open('config.json', 'r') as config_file:
+			try:
+				config = json.load(config_file)
+			except Exception as error:
+				logging.exception(error)
+				os.remove('config.json')
+				return ()
+
+			try:
+				return config['theme'] if config['theme'] != None else 'SystemDefault'
+			except KeyError:
+				with open('config.json', 'r') as config_file:
+					config = json.load(config_file)
+
+				config['theme'] = None
+				with open('config.json', 'w') as config_file:
+					json.dump(config, config_file, indent=4)
+
+				return self.load_theme()
+
+
+	def save_theme(self, theme):
+		if not os.path.isfile('config.json'):
+			with open('config.json', 'w') as config_file:
+				config = {'users': {}, 'history': {}, 'theme': None}
+		else:
+			with open('config.json', 'r') as config_file:
+				config = json.load(config_file)
+
+		config['theme'] = theme
+		with open('config.json', 'w') as config_file:
+			json.dump(config, config_file, indent=4)
+
+		return True
+
+
 	def load_password_from_config(self, username):
 		with open('config.json', 'r') as config_file:
 			config = json.load(config_file)
@@ -224,7 +308,7 @@ class Session:
 	def store_login(self, username, password):
 		if not os.path.isfile('config.json'):
 			with open('config.json', 'w') as config_file:
-				config = {'users': {}, 'history': {}}
+				config = {'users': {}, 'history': {}, 'theme': None}
 		else:
 			with open('config.json', 'r') as config_file:
 				config = json.load(config_file)
@@ -260,10 +344,13 @@ class Session:
 				sg.popup('Incorrect email: try again.', title='Incorrect email', keep_on_top=True)
 			elif 'CHALLENGE' in error.args:
 				sg.popup('Error: LinkedIn requires a sign-in challenge.', title='Linkedin error', keep_on_top=True)
+			elif 'Expecting value: line 1 column 1 (char 0)' in error.args:
+				sg.popup(f'Linkedin is refusing to sign in. Please try again later.', title='Unable to sign in', keep_on_top=True)
 			else:
-				sg.popup(f'Unhandled exception: {traceback.format_exc(error)}', title='Unhandled exception', keep_on_top=True)
+				sg.popup(f'Error arguments: {error.args}\n{traceback.format_exc()}', title='Unhandled exception', keep_on_top=True)
 
 			return False
+
 
 	# perform the API calls
 	def linkedin_api_call(self, profile):
@@ -274,7 +361,7 @@ class Session:
 				contact_info = self.application.get_profile_contact_info(profile)
 			except Exception as error:
 				logging.exception(f'Error loading profile: {error}')
-				traceback.format_exc(error)
+				traceback.format_exc()
 				return None
 		else:
 			try:
@@ -283,7 +370,6 @@ class Session:
 				contact_info = {'email_address': 'squarepants@bikinibottom.com', 'websites': ['square@pants.bk'], 'twitter': '@pants', 'phone_numbers': ['+001']}
 			except Exception as error:
 				logging.exception(f'Error loading profile: {error}')
-				sg.popup(traceback.format_exc(error))
 				return None
 
 		self.store_profile(profile, contact_info)
@@ -410,11 +496,12 @@ if __name__ == '__main__':
 		format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S'
 	)
 
-	# set theme
-	sg.theme('SystemDefault')
-
-	# create session, display sign-in screen
+	# create session
 	session = Session()
+	load_theme = session.load_theme()
+	sg.theme(load_theme)
+
+	# load UI
 	session.gui.display_signin_screen()
 	logging.info(f'Program started')
 
@@ -431,14 +518,36 @@ if __name__ == '__main__':
 			session.history.hourly_limit = None
 
 		if event == 'theme_switch': 
+			toggled_theme = 'DarkBlack' if load_theme == 'SystemDefault' else 'SystemDefault'
+			inverse_theme = 'DarkBlack' if load_theme == 'SystemDefault' else 'SystemDefault'
 			if values['theme_switch']:
-				sg.theme('DarkBlack')
+				sg.theme(toggled_theme)
+				session.save_theme(toggled_theme)
 			else:
-				sg.theme('SystemDefault')
+				sg.theme(inverse_theme)
+				session.save_theme(inverse_theme)
 			
 			session.gui.window.finalize()
 
-		if event == 'show_log':
+		elif event == 'debug_screen':
+			session.gui.display_debug_screen()
+			while True:
+				event, values = session.gui.secondary_window.read()
+				if event == sg.WIN_CLOSED:
+					session.gui.secondary_window.close()
+					event, values = None, None
+					break
+
+				elif event == 'Clear config':
+					session.clear_config()
+
+				elif event == 'Remove contacts':
+					session.remove_contacts()
+
+				elif event == 'Run tests':
+					pass
+
+		elif event == 'show_log':
 			if session.get_log_length() == 0:
 				session.gui.window['output_window'].update('-- Log is empty --')
 			else:
@@ -447,7 +556,7 @@ if __name__ == '__main__':
 
 				session.gui.window['output_window'].update(log_text)
 
-		if event == 'Sign in':
+		elif event == 'Sign in':
 			if values['username'] != '' and values['password'] != '' or values['-USERNAME-'] != [] or session.debug:
 				if values['-USERNAME-'] != []:
 					username = values['-USERNAME-'][0]
@@ -474,7 +583,7 @@ if __name__ == '__main__':
 					break
 
 				if not auth_success:
-					sg.popup('Incorrect login details!', title='Incorrect login', keep_on_top=True)
+					print('Failed to sign in.\n')
 				else: 
 					sg.popup('Signed in successfully!', title='Success', keep_on_top=True)
 					session.gui.window.close()
