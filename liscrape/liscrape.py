@@ -121,7 +121,7 @@ class GUI:
 				[
 					sg.Button('Tools', font=('Helvetica', 11), key='debug_screen'),
 					sg.Button('Show log', font=('Helvetica', 11), key='show_log'), 
-					sg.Text(f'Log file length: {self.parent_session.get_log_length()} lines', font=('Helvetica', 11))
+					sg.Text(f'Log file length: {self.parent_session.get_log_length()} lines', key='log_length' , font=('Helvetica', 11))
 				]
 		]
 
@@ -142,7 +142,8 @@ class GUI:
 	def display_debug_screen(self):
 		layout = [
 			[sg.Text('Debug settings and tools', font=('Helvetica', 11))],
-			[sg.Text('Clear configuration file', font=('Helvetica', 11), size=(20, None)), sg.Button('Clear config')],
+			[sg.Text('Clear program log', font=('Helvetica', 11), size=(20, None)), sg.Button('Clear log')],
+			[sg.Text('Clear configuration file', font=('Helvetica', 11), size=(20, None)), sg.Button('Clear configuration')],
 			[sg.Text('Clear all stored contacts', font=('Helvetica', 11), size=(20, None)), sg.Button('Remove contacts')],
 			[sg.Text('Run automated tests', font=('Helvetica', 11), size=(20, None)), sg.Button('Run tests')]
 		]
@@ -168,7 +169,7 @@ class GUI:
 
 class Session:
 	def __init__(self):
-		self.version = '1.2.2'
+		self.version = '1.2.3'
 		self.username = None
 		self.password = None
 		self.authenticated = False
@@ -183,6 +184,7 @@ class Session:
 		self.parsed = 0
 
 		# additional options
+		self.log_filename = 'liscrape-log.log'
 		self.ignore_duplicates = False
 		self.debug = False
 
@@ -195,12 +197,47 @@ class Session:
 		self.history.check_validity()
 
 
+	def start_log(self):
+		logging.basicConfig(
+			filename=self.log_filename, level=logging.DEBUG,
+			format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S'
+		)
+
+
 	def get_log_length(self):
-		if not os.path.isfile('log.log'):
+		if not os.path.isfile(self.log_filename):
 			return 0
 
-		with open('log.log', 'r') as log_file:
+		with open(self.log_filename, 'r') as log_file:
 			return sum(1 for row in log_file)
+
+
+	def load_log(self):
+		if self.get_log_length() == 0:
+				return '-- Log is empty --'
+		else:
+			with open(session.log_filename, 'r') as log_file:
+				return log_file.read()
+
+
+	def clear_log(self):
+		try:
+			logging.shutdown()
+		except Exception as e:
+			sg.popup(traceback.format_exc())
+			logging.exception(f'Exception attempting to shutdown logging: {e}')
+			return
+
+		if os.path.isfile(self.log_filename):
+			os.remove(self.log_filename)
+			sg.popup(f'Log file {self.log_filename} successfully removed!')
+
+			# restart log, refresh log length
+			self.start_log()
+			self.gui.window['log_length'].update(f'Log file length: {self.get_log_length()} lines')
+			self.gui.window['output_window'].update(self.load_log())
+		else:
+			sg.popup('Nothing to remove!')
 
 
 	def remove_contacts(self):
@@ -486,15 +523,11 @@ class Session:
 
 
 if __name__ == '__main__':
-	# logging and debug
-	log = 'log.log'
-	logging.basicConfig(
-		filename=log, level=logging.DEBUG,
-		format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S'
-	)
-
-	# create session
+	# create session, start log
 	session = Session()
+	session.start_log()
+	
+	# theme
 	load_theme = session.load_theme()
 	sg.theme(load_theme)
 
@@ -535,6 +568,9 @@ if __name__ == '__main__':
 					event, values = None, None
 					break
 
+				elif event == 'Clear log':
+					session.clear_log()
+
 				elif event == 'Clear config':
 					session.clear_config()
 
@@ -545,13 +581,7 @@ if __name__ == '__main__':
 					pass
 
 		elif event == 'show_log':
-			if session.get_log_length() == 0:
-				session.gui.window['output_window'].update('-- Log is empty --')
-			else:
-				with open('log.log', 'r') as log_file:
-					log_text = log_file.read()
-
-				session.gui.window['output_window'].update(log_text)
+			session.gui.window['output_window'].update(session.load_log())
 
 		elif event == 'Sign in':
 			if values['username'] != '' and values['password'] != '' or values['-USERNAME-'] != [] or session.debug:
