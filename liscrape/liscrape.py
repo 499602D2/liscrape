@@ -1,6 +1,7 @@
-import os, json, csv, time, logging, traceback, random
+import os, csv, time, logging, traceback, random
 import PySimpleGUI as sg
 import pandas as pd
+import ujson as json
 
 from openpyxl import load_workbook
 from linkedin_api import Linkedin
@@ -169,7 +170,7 @@ class GUI:
 
 class Session:
 	def __init__(self):
-		self.version = '1.2.3'
+		self.version = '1.2.5'
 		self.username = None
 		self.password = None
 		self.authenticated = False
@@ -214,7 +215,7 @@ class Session:
 
 	def load_log(self):
 		if self.get_log_length() == 0:
-				return '-- Log is empty --'
+				return '-- Log is empty --\n'
 		else:
 			with open(session.log_filename, 'r') as log_file:
 				return log_file.read()
@@ -251,9 +252,14 @@ class Session:
 
 
 	def clear_config(self):
+		self.history.history = {}
 		if os.path.isfile('config.json'):
+			with open('config.json', 'r') as config_file:
+				config = json.load(config_file)
+				users = config['users']
+
 			with open('config.json', 'w') as config_file:
-				config = {'users': {}, 'history': {}, 'theme': None}
+				config = {'users': users, 'history': {}, 'theme': None}
 				json.dump(config, config_file, indent=4)
 				sg.popup('Configuration file cleared!')
 
@@ -271,6 +277,8 @@ class Session:
 			elif self.sheet_type == 'excel':
 				df = pd.read_excel(self.sheet_path)
 				self.total_parsed = len(df.index)
+
+		return self.total_parsed
 
 
 	def load_configuration(self):
@@ -387,16 +395,21 @@ class Session:
 
 
 	# perform the API calls
-	def linkedin_api_call(self, profile):
+	def linkedin_api_call(self, profile_url):
 		if not self.debug:
 			try:
 				# two API requests: profile and contact info
-				profile = self.application.get_profile(profile)
-				contact_info = self.application.get_profile_contact_info(profile)
+				profile = self.application.get_profile(profile_url)
 			except Exception as error:
 				logging.exception(f'Error loading profile: {error}')
 				traceback.format_exc()
 				return None
+			try:
+				contact_info = self.application.get_profile_contact_info(profile_url)
+			except Exception as error:
+				logging.exception(f'Error loading contact info: {error}')
+				traceback.format_exc()
+				contact_info = {}
 		else:
 			try:
 				# a sample profile for debugging purposes
@@ -404,6 +417,7 @@ class Session:
 				contact_info = {'email_address': 'squarepants@bikinibottom.com', 'websites': ['square@pants.bk'], 'twitter': '@pants', 'phone_numbers': ['+001']}
 			except Exception as error:
 				logging.exception(f'Error loading profile: {error}')
+				print(f'Error loading profile: {error}')
 				return None
 
 		self.store_profile(profile, contact_info)
@@ -450,22 +464,52 @@ class Session:
 		# generate the profile_dict: map API resp. keys to column names, add Nonetypes
 		for key in profile_keys_full:
 			if key == 'languages' and key in profile_keys:
-				profile[key] = ','.join(profile['languages'])
+				# languages: a list of dictionaries with name:value
+				logging.info(f"languages: {profile['languages']} | type: {profile['languages']}")
+				try:
+					if type(profile['languages']) == list:
+						if len(profile['languages']) != 0:
+							language_string = ''
+							for dict in profile['languages']:
+								language_string += dict['name'] 
+								language_string += ', '
+							
+							profile['languages'] = language_string[0:-2]
+						else:
+							profile['languages'] = ''
+
+				except Exception as e:
+					profile['languages'] = ''
+					logging.exception(f'Error setting language: {e}')
+					traceback.format_exc()
+				
 
 			if key in profile_keys:
 				profile_dict[column_map[key]] = profile[key]
 			else:
-				profile_dict[column_map[key]] = None
+				profile_dict[column_map[key]] = ''
 
 		# same as above, but for contact keys
 		for key in contact_keys_full:
 			if key == 'phone_numbers' and key in contact_keys:
-				contact_info[key] = u','.join(contact_info['phone_numbers'])
+				logging.info(f'Phone numbers: {contact_info["phone_numbers"]} / {type(contact_info["phone_numbers"])}')
+				try:
+					for val in contact_info['phone_numbers']:
+						if len(contact_info['phone_numbers']) > 0:
+							numbers = ''
+							for dict in contact_info['phone_numbers']:
+								numbers += dict['number']
+								numbers += f' ({dict["type"]})'
+								numbers += ', '
+
+					contact_info['phone_numbers'] = numbers[0:-2]
+				except:
+					contact_info['phone_numbers'] = ''
 			
 			if key in contact_keys:
 				profile_dict[column_map[key]] = contact_info[key]
 			else:
-				profile_dict[column_map[key]] = None
+				profile_dict[column_map[key]] = ''
 
 		logging.info(f'profile_dict generated: {profile_dict}')
 
@@ -487,33 +531,48 @@ class Session:
 
 		elif self.sheet_type == 'excel':
 			# convert dictionary to a dataframe
-			df = pd.DataFrame(profile_dict, columns=[val for val in column_map.values()], index=[self.total_parsed])
+			for key, val in profile_dict.items():
+				profile_dict[key] = [val]
+			try:
+				df = pd.DataFrame(profile_dict, columns=[val for val in column_map.values()])
+			except Exception as e:
+				logging.exception(f'Exception creating df: {e}')
+				logging.info(traceback.format_exc())
+				#df = pd.DataFrame(profile_dict, columns=[val for val in column_map.values()], index=[self.total_parsed])
+
+			'''
+			try:
+				df = pd.DataFrame.from_records([profile_dict])
+			except Exception as e:
+				logging.exception(f'Exception creating df: {e}')
+				logging.info(traceback.format_exc())
+			'''
 
 			# store (file exists)
 			if os.path.isfile(self.sheet_path):
-				book = load_workbook(self.sheet_path)
-				with pd.ExcelWriter(self.sheet_path, engine='openpyxl') as writer:
-					writer.book = book
-					writer.sheets = {ws.title: ws for ws in book.worksheets}
-					for sheetname in writer.sheets:
-						df.to_excel(
-							writer, sheet_name=sheetname, 
-							startrow=writer.sheets[sheetname].max_row, 
-							index = False, header= False)
+				try:
+					book = load_workbook(self.sheet_path)
+					with pd.ExcelWriter(self.sheet_path, engine='openpyxl') as writer:
+						writer.book = book
+						writer.sheets = {ws.title: ws for ws in book.worksheets}
+						for sheetname in writer.sheets:
+							df.to_excel(
+								writer, sheet_name=sheetname, 
+								startrow=writer.sheets[sheetname].max_row, 
+								index = False, header= False
+								)
+
+				except Exception as e:
+					logging.exception(f'Error storing profile in file: {e}')
+					logging.info(traceback.format_exc())
 			else:
 				try:
 					with pd.ExcelWriter(self.sheet_path, engine='openpyxl') as writer:
 						df.to_excel(writer, sheet_name='Sheet1', index=False, header=True)
-						workbook = writer.book
-						worksheet = writer.sheets['Sheet1']
 
-						# format column as text: https://xlsxwriter.readthedocs.io/format.html
-						format_text = workbook.add_format({'num_format': '@'})
-						worksheet.set_column('K:K', None, format_text)
-
-						logging.info('Column num_format set to text for columns K:K')
 				except Exception as e:
-					logging.exception(f'Error setting column format: {e}')
+					logging.exception(f'Error storing first profile in file: {e}')
+					logging.info(traceback.format_exc())
 
 		print(f'Stored profile {profile_dict["Linkedin profile ID"]} to {self.sheet_path}\n')
 		logging.info(f'Stored profile {profile_dict["Linkedin profile ID"]} to {self.sheet_path}')
@@ -571,7 +630,7 @@ if __name__ == '__main__':
 				elif event == 'Clear log':
 					session.clear_log()
 
-				elif event == 'Clear config':
+				elif event == 'Clear configuration':
 					session.clear_config()
 
 				elif event == 'Remove contacts':
@@ -589,10 +648,15 @@ if __name__ == '__main__':
 					username = values['-USERNAME-'][0]
 					password = session.load_password_from_config(username)
 					values['remember'] = False
+				else:
+					username = values['username']
+					password = values['password']
+
+				logging.info(f'Signing in with stored login: {username} ({type(username)}): {password} ({type(password)})')
 
 				print('Signing in...')
 				if not session.debug:
-					auth_success = session.sign_in(values['username'], values['password'], values['remember'], values['cookies'])
+					auth_success = session.sign_in(username, password, values['remember'], values['cookies'])
 				else:
 					logging.info(f'Authenticated with debug mode enabled')
 					session.username = 'debug user'
@@ -666,11 +730,12 @@ if __name__ == '__main__':
 			if event == 'Store contact' and (values['profile_url'] != '' or session.debug):
 				if not session.debug:
 					print(f'Loading {values["profile_url"]}...')
+					values['profile_url'] = values['profile_url'].split('?')[0]
 					if values['profile_url'][-1] == '/':
 						values['profile_url'] = values['profile_url'][0:-1]
 
 					profile = values['profile_url'].split('/')[-1]
-					logging.info(f'Parsing profile {profile}')
+					logging.info(f'\nParsing profile {profile}')
 				else:
 					profile = None
 					print(f'Parsing sample debug profile...')
