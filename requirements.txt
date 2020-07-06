@@ -3,3 +3,4 @@ openpyxl
 xlrd
 PySimpleGUI
 linkedin_api
+ujson
