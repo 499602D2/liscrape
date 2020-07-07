@@ -7,17 +7,10 @@ import ujson as json
 from openpyxl import load_workbook
 from linkedin_api import Linkedin
 
-'''
-TODO
 
-Perf/logic
-- spawn thread on "store contact" button press
-- add automated scraping capability: "scrape first-degree contacts"
-- check if profile is duplicate with URL before API call
+# TODO add automated scraping capability: "scrape first-degree contacts"
+# TODO check if profile is duplicate with URL before API call
 
-UI
-- adjust font sizing
-'''
 
 class History:
 	'''
@@ -32,11 +25,14 @@ class History:
 
 
 	def load(self):
+		'''
+		Load history from configuration file
+		'''
 		if not os.path.isfile('config.json'):
 			with open('config.json', 'w') as config_file:
 				config = {'users': {}, 'history': {}, 'theme': None}
 				json.dump(config, config_file, indent=4)
-			
+
 			return {}
 
 		with open('config.json', 'r') as config_file:
@@ -51,6 +47,9 @@ class History:
 
 
 	def store(self):
+		'''
+		Store history into configuration file
+		'''
 		if os.path.isfile('config.json'):
 			with open('config.json', 'r') as config_file:
 				config = json.load(config_file)
@@ -66,6 +65,9 @@ class History:
 
 
 	def add(self, user_id, ignore_duplicates):
+		'''
+		Add a user profile into history, with the current unix time stamp
+		'''
 		self.call_count += 1
 		not_added = False if user_id in self.history.values() else True
 		self.history[time.time()] = user_id
@@ -74,6 +76,10 @@ class History:
 
 
 	def check_validity(self):
+		'''
+		Checks if we have API calls left in our quota, and verifies
+		that the current profile is not a duplicate.
+		'''
 		if self.parent_session.debug:
 			return True, None
 
@@ -155,28 +161,26 @@ class GUI:
 
 	def display_main_screen(self):
 		layout = [
-			[sg.Text(f'Signed in as:', font=('Helvetica', 11)), sg.Text(f'{self.parent_session.username}', font=('Helvetica', 11), text_color='Blue')],
+			[sg.Text('Signed in as:', font=('Helvetica', 11)), sg.Text(f'{self.parent_session.username}', font=('Helvetica', 11), text_color='Blue')],
 			[sg.Text('Contact to store (URL)', font=('Helvetica', 11)), sg.InputText(key="profile_url")],
 			[sg.Button('Store contact', font=('Helvetica', 11)), sg.Text(f'{self.parent_session.parsed} contacts stored (this session)\t', key='parsed', font=('Helvetica', 11))],
 			[sg.Output(size=(60, 15), font=('Helvetica', 11))],
 			[
 				sg.Text(f'Contacts in file: {self.parent_session.total_parsed}', font=('Helvetica', 11), key='total_parsed', size=(15, None)), 
 				sg.Text(f'Session path: {self.parent_session.sheet_path}', font=('Helvetica', 11))
-			]
+			]]
 
-		]
-
-		self.window = sg.Window(title=f'Liscrape version {self.parent_session.version}', 
+		self.window = sg.Window(title=f'Liscrape version {self.parent_session.version}',
 			layout=layout, resizable=True, grab_anywhere=True)
 
 
 class Session:
 	def __init__(self):
-		self.version = '1.3.0'
+		self.version = '1.3.1'
 		self.username = None
 		self.password = None
 		self.authenticated = False
-		
+
 		# sheet properties
 		self.sheet_path = None
 		self.sheet_type = None
@@ -202,8 +206,8 @@ class Session:
 
 	def start_log(self):
 		logging.basicConfig(
-			filename=self.log_filename, level=logging.DEBUG,
-			format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S'
+		filename=self.log_filename, level=logging.DEBUG,
+		format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S'
 		)
 
 
@@ -217,10 +221,10 @@ class Session:
 
 	def load_log(self):
 		if self.get_log_length() == 0:
-				return '-- Log is empty --\n'
-		else:
-			with open(session.log_filename, 'r') as log_file:
-				return log_file.read()
+			return '-- Log is empty --\n'
+
+		with open(session.log_filename, 'r') as log_file:
+			return log_file.read()
 
 
 	def clear_log(self):
@@ -246,11 +250,11 @@ class Session:
 	def remove_contacts(self):
 		if os.path.isfile('linkedin_scrape.xlsx'):
 			os.remove('linkedin_scrape.xlsx')
-			sg.popup(f'Contacts file linkedin_scrape.xlsx removed!')
+			sg.popup('Contacts file linkedin_scrape.xlsx removed!')
 
 		if os.path.isfile('linkedin_scrape.csv'):
 			os.remove('linkedin_scrape.csv')
-			sg.popup(f'Contacts file linkedin_scrape.xlsx csv!')
+			sg.popup('Contacts file linkedin_scrape.xlsx csv!')
 
 
 	def clear_config(self):
@@ -274,7 +278,7 @@ class Session:
 			logging.info(f'Sheet {self.sheet_path} exists: getting length.')
 			if self.sheet_type == 'csv':
 				with open(self.sheet_path, 'r') as csv_file:
-					csv_reader =  csv.reader(csv_file)
+					csv_reader = csv.reader(csv_file)
 					self.total_parsed = sum(1 for row in csv_reader)
 			elif self.sheet_type == 'excel':
 				df = pd.read_excel(self.sheet_path)
@@ -389,7 +393,7 @@ class Session:
 			elif 'CHALLENGE' in error.args:
 				sg.popup('Error: LinkedIn requires a sign-in challenge.', title='Linkedin error', keep_on_top=True)
 			elif 'Expecting value: line 1 column 1 (char 0)' in error.args:
-				sg.popup(f'Linkedin is refusing to sign in. Please try again later.', title='Unable to sign in', keep_on_top=True)
+				sg.popup('Linkedin is refusing to sign in. Please try again later.', title='Unable to sign in', keep_on_top=True)
 			else:
 				sg.popup(f'Error arguments: {error.args}\n{traceback.format_exc()}', title='Unhandled exception', keep_on_top=True)
 
@@ -429,7 +433,7 @@ class Session:
 
 	def store_profile(self, profile, contact_info):
 		def set_diff(dict, full_set):
-			''' 
+			'''
 			Calculate the difference between the full key set and the provided key set.
 			Return the keys that exist in the dictionary, so the missing ones can be
 			set to Nonetypes.
@@ -439,8 +443,9 @@ class Session:
 
 		# the full set of keys a complete profile would have
 		profile_keys_full = {
-			'firstName', 'lastName', 'profile_id', 'headline', 
-			'summary', 'industryName', 'geoCountryName', 'languages'}
+		'firstName', 'lastName', 'profile_id', 'headline', 
+		'summary', 'industryName', 'geoCountryName', 'languages'}
+		
 		contact_keys_full = {'birthdate', 'email_address', 'phone_numbers'}
 
 		# if the profile is lacking keys, replace their values with Nonetypes
@@ -449,17 +454,17 @@ class Session:
 
 		# map profile keys to CRM-compatible column names
 		column_map = {
-			'firstName': 'First name',
-			'lastName': 'Last name',
-			'profile_id': 'Linkedin profile ID',
-			'headline': 'Linkedin headline',
-			'summary': 'Linkedin summary',
-			'industryName': 'Industry',
-			'geoCountryName': 'Location',
-			'languages': 'Languages',
-			'birthdate': 'Birthday',
-			'email_address': 'Email address',
-			'phone_numbers': 'Phone number'
+		'firstName': 'First name',
+		'lastName': 'Last name',
+		'profile_id': 'Linkedin profile ID',
+		'headline': 'Linkedin headline',
+		'summary': 'Linkedin summary',
+		'industryName': 'Industry',
+		'geoCountryName': 'Location',
+		'languages': 'Languages',
+		'birthdate': 'Birthday',
+		'email_address': 'Email address',
+		'phone_numbers': 'Phone number'
 		}
 
 		# generate the profile: this is stored later
@@ -474,9 +479,9 @@ class Session:
 						if len(profile['languages']) != 0:
 							language_string = ''
 							for dict in profile['languages']:
-								language_string += dict['name'] 
+								language_string += dict['name']
 								language_string += ', '
-							
+
 							profile['languages'] = language_string[0:-2]
 						else:
 							profile['languages'] = ''
@@ -485,7 +490,7 @@ class Session:
 					profile['languages'] = ''
 					logging.exception(f'Error setting language: {e}')
 					traceback.format_exc()
-				
+
 
 			if key in profile_keys:
 				profile_dict[column_map[key]] = profile[key]
@@ -507,7 +512,7 @@ class Session:
 					contact_info['phone_numbers'] = numbers[0:-2]
 				except:
 					contact_info['phone_numbers'] = ''
-			
+
 			if key in contact_keys:
 				profile_dict[column_map[key]] = contact_info[key]
 			else:
@@ -517,12 +522,12 @@ class Session:
 
 		# if this contact is not a duplicate, or we are ignoring duplicates, continue: else, return
 		if not self.history.add(profile_dict['Linkedin profile ID'], self.ignore_duplicates):
-			sg.popup(f'This profile has already been added: avoiding duplicate.', font=('Helvetica', 11), title='Duplicate', keep_on_top=True)
+			sg.popup('This profile has already been added: avoiding duplicate.', font=('Helvetica', 11), title='Duplicate', keep_on_top=True)
 			print(f'⚠️ Duplicate detected ({profile_dict["Linkedin profile ID"]})\n')
 			return
 
 		if self.sheet_type == 'csv':
-			field_names = [key for key in profile_dict.keys()]
+			field_names = profile_dict.keys()
 			if not os.path.isfile(self.sheet_path) and self.sheet_type == 'csv':
 				with open(self.sheet_path, 'w', newline='') as csv_file:
 					csv.DictWriter(csv_file, fieldnames=field_names).writeheader()
@@ -536,11 +541,10 @@ class Session:
 			for key, val in profile_dict.items():
 				profile_dict[key] = [val]
 			try:
-				df = pd.DataFrame(profile_dict, columns=[val for val in column_map.values()])
-			except Exception as e:
-				logging.exception(f'Exception creating df: {e}')
+				df = pd.DataFrame(profile_dict, columns=column_map.values())
+			except Exception as error:
+				logging.exception(f'Exception creating df: {error}')
 				logging.info(traceback.format_exc())
-				#df = pd.DataFrame(profile_dict, columns=[val for val in column_map.values()], index=[self.total_parsed])
 
 			# store (file exists)
 			if os.path.isfile(self.sheet_path):
@@ -551,10 +555,10 @@ class Session:
 						writer.sheets = {ws.title: ws for ws in book.worksheets}
 						for sheetname in writer.sheets:
 							df.to_excel(
-								writer, sheet_name=sheetname, 
-								startrow=writer.sheets[sheetname].max_row, 
-								index = False, header= False
-								)
+							writer, sheet_name=sheetname, 
+							startrow=writer.sheets[sheetname].max_row, 
+							index = False, header= False
+							)
 
 				except Exception as e:
 					logging.exception(f'Error storing profile in file: {e}')
@@ -579,28 +583,28 @@ if __name__ == '__main__':
 	# create session, start log
 	session = Session()
 	session.start_log()
-	
+
 	# theme
 	load_theme = session.load_theme()
 	sg.theme(load_theme)
 
 	# load UI
 	session.gui.display_signin_screen()
-	logging.info(f'Program started')
+	logging.info('Program started')
 
 	# sign-in eventloop
 	while True:
 		event, values = session.gui.window.read()
 
 		if event == sg.WIN_CLOSED:
-			logging.info(f'Sign-in window closed')
+			logging.info('Sign-in window closed')
 			break
 
 		if values['debug_mode']:
 			session.debug = True
 			session.history.hourly_limit = None
 
-		if event == 'theme_switch': 
+		if event == 'theme_switch':
 			toggled_theme = 'DarkBlack' if load_theme == 'SystemDefault' else 'SystemDefault'
 			inverse_theme = 'DarkBlack' if load_theme == 'SystemDefault' else 'SystemDefault'
 			if values['theme_switch']:
@@ -609,7 +613,7 @@ if __name__ == '__main__':
 			else:
 				sg.theme(inverse_theme)
 				session.save_theme(inverse_theme)
-			
+
 			session.gui.window.finalize()
 
 		elif event == 'debug_screen':
@@ -621,7 +625,7 @@ if __name__ == '__main__':
 					event, values = None, None
 					break
 
-				elif event == 'Clear log':
+				if event == 'Clear log':
 					session.clear_log()
 
 				elif event == 'Clear configuration':
@@ -652,7 +656,7 @@ if __name__ == '__main__':
 				if not session.debug:
 					auth_success = session.sign_in(username, password, values['remember'], values['cookies'])
 				else:
-					logging.info(f'Authenticated with debug mode enabled')
+					logging.info('Authenticated with debug mode enabled')
 					session.username = 'debug user'
 					session.authenticated = True
 					auth_success = True
@@ -669,15 +673,15 @@ if __name__ == '__main__':
 
 				if not auth_success:
 					print('Failed to sign in.\n')
-				else: 
+				else:
 					sg.popup('Signed in successfully!', title='Success', keep_on_top=True)
 					session.gui.window.close()
 
 					# request sheet/csv location
 					session.gui.display_sheet_screen()
-					while session.sheet_path == None:
+					while session.sheet_path is None:
 						event, values = session.gui.window.read()
-						if event == 'Use default' or (event == sg.WIN_CLOSED and session.sheet_path == None):
+						if event == 'Use default' or (event == sg.WIN_CLOSED and session.sheet_path is None):
 							session.sheet_type = session.default_sheet_type
 							if session.sheet_type == 'csv':
 								session.sheet_path = 'linkedin_scrape.csv'
@@ -686,8 +690,8 @@ if __name__ == '__main__':
 
 							if event == sg.WIN_CLOSED:
 								sg.popup(
-									f'No file path defined. Using default path: {session.sheet_path}', 
-									title='No path defined', keep_on_top=True)
+								f'No file path defined. Using default path: {session.sheet_path}', 
+								title='No path defined', keep_on_top=True)
 
 							break
 
@@ -720,12 +724,12 @@ if __name__ == '__main__':
 				event, values = session.gui.window.read()
 
 				if event == sg.WIN_CLOSED:
-					logging.info(f'Main window closed')
-					
+					logging.info('Main window closed')
+
 					session.history.store()
 					session.gui.window.close()
 
-					logging.info(f'Exiting main event loop gracefully')
+					logging.info('Exiting main event loop gracefully')
 					break
 
 				if event == 'Store contact' and (values['profile_url'] != '' or session.debug):
@@ -735,17 +739,21 @@ if __name__ == '__main__':
 						if values['profile_url'][-1] == '/':
 							values['profile_url'] = values['profile_url'][0:-1]
 
-						profile = values['profile_url'].split('/')[-1]
+						if '/' in values['profile_url']:
+							profile = values['profile_url'].split('/')[-1]
+						else:
+							profile = values['profile_url']
+
 						logging.info(f'\nParsing profile {profile}')
 					else:
 						profile = None
-						print(f'⏳ Parsing sample debug profile...')
+						print('⏳ Parsing sample debug profile...')
 
 					validity_status, time_until_next = session.history.check_validity()
 					if validity_status:
 						logging.info(f'Profile {profile} put into pipeline...')
 						pipeline.put(profile)
-						
+
 						executor.submit(session.linkedin_api_call, pipeline, threading_event)
 						threading_event.set()
 
