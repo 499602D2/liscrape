@@ -410,13 +410,13 @@ class Session:
 					profile = self.application.get_profile(profile_url)
 				except Exception as error:
 					logging.exception(f'Error loading profile: {error}')
-					traceback.format_exc()
+					logging.info(traceback.format_exc())
 					return None
 				try:
 					contact_info = self.application.get_profile_contact_info(profile_url)
 				except Exception as error:
 					logging.exception(f'Error loading contact info: {error}')
-					traceback.format_exc()
+					logging.info(traceback.format_exc())
 					contact_info = {}
 			else:
 				try:
@@ -489,7 +489,7 @@ class Session:
 				except Exception as e:
 					profile['languages'] = ''
 					logging.exception(f'Error setting language: {e}')
-					traceback.format_exc()
+					logging.info(traceback.format_exc())
 
 
 			if key in profile_keys:
@@ -522,7 +522,7 @@ class Session:
 
 		# if this contact is not a duplicate, or we are ignoring duplicates, continue: else, return
 		if not self.history.add(profile_dict['Linkedin profile ID'], self.ignore_duplicates):
-			sg.popup('This profile has already been added: avoiding duplicate.', font=('Helvetica', 11), title='Duplicate', keep_on_top=True)
+			#sg.popup('This profile has already been added: avoiding duplicate.', font=('Helvetica', 11), title='Duplicate', keep_on_top=True)
 			print(f'⚠️ Duplicate detected ({profile_dict["Linkedin profile ID"]})\n')
 			return
 
