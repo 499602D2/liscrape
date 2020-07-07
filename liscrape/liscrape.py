@@ -1,4 +1,5 @@
 import os, csv, time, logging, traceback, random
+import concurrent.futures, queue, threading
 import PySimpleGUI as sg
 import pandas as pd
 import ujson as json
@@ -26,7 +27,7 @@ class History:
 	def __init__(self, session):
 		self.parent_session = session
 		self.call_count = 0
-		self.hourly_limit = 60
+		self.hourly_limit = 90
 		self.history = {}
 
 
@@ -157,20 +158,21 @@ class GUI:
 			[sg.Text(f'Signed in as:', font=('Helvetica', 11)), sg.Text(f'{self.parent_session.username}', font=('Helvetica', 11), text_color='Blue')],
 			[sg.Text('Contact to store (URL)', font=('Helvetica', 11)), sg.InputText(key="profile_url")],
 			[sg.Button('Store contact', font=('Helvetica', 11)), sg.Text(f'{self.parent_session.parsed} contacts stored (this session)\t', key='parsed', font=('Helvetica', 11))],
-			[sg.Output(size=(60, 15))],
+			[sg.Output(size=(60, 15), font=('Helvetica', 11))],
 			[
 				sg.Text(f'Contacts in file: {self.parent_session.total_parsed}', font=('Helvetica', 11), key='total_parsed', size=(15, None)), 
 				sg.Text(f'Session path: {self.parent_session.sheet_path}', font=('Helvetica', 11))
 			]
 
 		]
+
 		self.window = sg.Window(title=f'Liscrape version {self.parent_session.version}', 
 			layout=layout, resizable=True, grab_anywhere=True)
 
 
 class Session:
 	def __init__(self):
-		self.version = '1.2.5'
+		self.version = '1.3.0'
 		self.username = None
 		self.password = None
 		self.authenticated = False
@@ -395,32 +397,34 @@ class Session:
 
 
 	# perform the API calls
-	def linkedin_api_call(self, profile_url):
-		if not self.debug:
-			try:
-				# two API requests: profile and contact info
-				profile = self.application.get_profile(profile_url)
-			except Exception as error:
-				logging.exception(f'Error loading profile: {error}')
-				traceback.format_exc()
-				return None
-			try:
-				contact_info = self.application.get_profile_contact_info(profile_url)
-			except Exception as error:
-				logging.exception(f'Error loading contact info: {error}')
-				traceback.format_exc()
-				contact_info = {}
-		else:
-			try:
-				# a sample profile for debugging purposes
-				profile = {'lastName': 'SquarePants', 'firstName': 'SpongeBob', 'industryName': 'Professional retard', 'profile_id': f'DEBUG-{random.randint(0,99999)}'}
-				contact_info = {'email_address': 'squarepants@bikinibottom.com', 'websites': ['square@pants.bk'], 'twitter': '@pants', 'phone_numbers': ['+001']}
-			except Exception as error:
-				logging.exception(f'Error loading profile: {error}')
-				print(f'Error loading profile: {error}')
-				return None
+	def linkedin_api_call(self, queue, event):
+		while not event.is_set() or not queue.empty():
+			profile_url = queue.get()
+			if not self.debug:
+				try:
+					# two API requests: profile and contact info
+					profile = self.application.get_profile(profile_url)
+				except Exception as error:
+					logging.exception(f'Error loading profile: {error}')
+					traceback.format_exc()
+					return None
+				try:
+					contact_info = self.application.get_profile_contact_info(profile_url)
+				except Exception as error:
+					logging.exception(f'Error loading contact info: {error}')
+					traceback.format_exc()
+					contact_info = {}
+			else:
+				try:
+					# a sample profile for debugging purposes
+					profile = {'lastName': 'SquarePants', 'firstName': 'SpongeBob', 'industryName': 'Professional retard', 'profile_id': f'DEBUG-{random.randint(0,99999)}'}
+					contact_info = {'email_address': 'squarepants@bikinibottom.com', 'websites': ['square@pants.bk'], 'twitter': '@pants', 'phone_numbers': ['+001']}
+				except Exception as error:
+					logging.exception(f'Error loading profile: {error}')
+					print(f'⛔️ Error loading profile: {error}')
+					return None
 
-		self.store_profile(profile, contact_info)
+			self.store_profile(profile, contact_info)
 
 
 	def store_profile(self, profile, contact_info):
@@ -465,7 +469,6 @@ class Session:
 		for key in profile_keys_full:
 			if key == 'languages' and key in profile_keys:
 				# languages: a list of dictionaries with name:value
-				logging.info(f"languages: {profile['languages']} | type: {profile['languages']}")
 				try:
 					if type(profile['languages']) == list:
 						if len(profile['languages']) != 0:
@@ -492,7 +495,6 @@ class Session:
 		# same as above, but for contact keys
 		for key in contact_keys_full:
 			if key == 'phone_numbers' and key in contact_keys:
-				logging.info(f'Phone numbers: {contact_info["phone_numbers"]} / {type(contact_info["phone_numbers"])}')
 				try:
 					for val in contact_info['phone_numbers']:
 						if len(contact_info['phone_numbers']) > 0:
@@ -516,7 +518,7 @@ class Session:
 		# if this contact is not a duplicate, or we are ignoring duplicates, continue: else, return
 		if not self.history.add(profile_dict['Linkedin profile ID'], self.ignore_duplicates):
 			sg.popup(f'This profile has already been added: avoiding duplicate.', font=('Helvetica', 11), title='Duplicate', keep_on_top=True)
-			print(f'Duplicate detected ({profile_dict["Linkedin profile ID"]})\n')
+			print(f'⚠️ Duplicate detected ({profile_dict["Linkedin profile ID"]})\n')
 			return
 
 		if self.sheet_type == 'csv':
@@ -539,14 +541,6 @@ class Session:
 				logging.exception(f'Exception creating df: {e}')
 				logging.info(traceback.format_exc())
 				#df = pd.DataFrame(profile_dict, columns=[val for val in column_map.values()], index=[self.total_parsed])
-
-			'''
-			try:
-				df = pd.DataFrame.from_records([profile_dict])
-			except Exception as e:
-				logging.exception(f'Exception creating df: {e}')
-				logging.info(traceback.format_exc())
-			'''
 
 			# store (file exists)
 			if os.path.isfile(self.sheet_path):
@@ -574,7 +568,7 @@ class Session:
 					logging.exception(f'Error storing first profile in file: {e}')
 					logging.info(traceback.format_exc())
 
-		print(f'Stored profile {profile_dict["Linkedin profile ID"]} to {self.sheet_path}\n')
+		print(f'✅ Stored profile {profile_dict["Linkedin profile ID"]} to {self.sheet_path}\n')
 		logging.info(f'Stored profile {profile_dict["Linkedin profile ID"]} to {self.sheet_path}')
 
 		self.parsed += 1
@@ -718,40 +712,51 @@ if __name__ == '__main__':
 
 	# main eventloop
 	try:
-		while True and session.authenticated:
-			event, values = session.gui.window.read()
-			if event == sg.WIN_CLOSED:
-				logging.info(f'Main window closed')
-				session.history.store()
-				session.gui.window.close()
-				logging.info(f'Exiting main event loop gracefully')
-				break
+		pipeline = queue.Queue(maxsize=10)
+		threading_event = threading.Event()
 
-			if event == 'Store contact' and (values['profile_url'] != '' or session.debug):
-				if not session.debug:
-					print(f'Loading {values["profile_url"]}...')
-					values['profile_url'] = values['profile_url'].split('?')[0]
-					if values['profile_url'][-1] == '/':
-						values['profile_url'] = values['profile_url'][0:-1]
+		with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+			while True and session.authenticated:
+				event, values = session.gui.window.read()
 
-					profile = values['profile_url'].split('/')[-1]
-					logging.info(f'\nParsing profile {profile}')
-				else:
-					profile = None
-					print(f'Parsing sample debug profile...')
+				if event == sg.WIN_CLOSED:
+					logging.info(f'Main window closed')
+					
+					session.history.store()
+					session.gui.window.close()
 
-				validity_status, time_until_next = session.history.check_validity()
-				if validity_status:
-					session.linkedin_api_call(profile)
+					logging.info(f'Exiting main event loop gracefully')
+					break
 
-					# clear input
-					session.gui.window['profile_url'].update('')
-					session.gui.window['parsed'].update(f'{session.parsed} {"contact" if session.parsed == 1 else "contacts"} stored (this session)\t')
-					session.gui.window['total_parsed'].update(f'Contacts in file: {session.total_parsed}\t')
+				if event == 'Store contact' and (values['profile_url'] != '' or session.debug):
+					if not session.debug:
+						print(f'⏳ Loading {values["profile_url"]}...')
+						values['profile_url'] = values['profile_url'].split('?')[0]
+						if values['profile_url'][-1] == '/':
+							values['profile_url'] = values['profile_url'][0:-1]
 
-				else:
-					sg.popup(f'API call limit reached. Try again in {time_until_next}.', font=('Helvetica', 11), title='Limit reached', keep_on_top=True)
-					logging.info(f'API call limit reached: time until next call {time_until_next}. Limit: {session.history.hourly_limit} calls per hour.')
+						profile = values['profile_url'].split('/')[-1]
+						logging.info(f'\nParsing profile {profile}')
+					else:
+						profile = None
+						print(f'⏳ Parsing sample debug profile...')
+
+					validity_status, time_until_next = session.history.check_validity()
+					if validity_status:
+						logging.info(f'Profile {profile} put into pipeline...')
+						pipeline.put(profile)
+						
+						executor.submit(session.linkedin_api_call, pipeline, threading_event)
+						threading_event.set()
+
+						# clear input
+						session.gui.window['profile_url'].update('')
+						session.gui.window['parsed'].update(f'{session.parsed} {"contact" if session.parsed == 1 else "contacts"} stored (this session)\t')
+						session.gui.window['total_parsed'].update(f'Contacts in file: {session.total_parsed}\t')
+
+					else:
+						sg.popup(f'API call limit reached. Try again in {time_until_next}.', font=('Helvetica', 11), title='Limit reached', keep_on_top=True)
+						logging.info(f'API call limit reached: time until next call {time_until_next}. Limit: {session.history.hourly_limit} calls per hour.')
 
 	except Exception as error:
 		logging.exception(error)
