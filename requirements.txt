@@ -2,5 +2,5 @@ pandas
 openpyxl
 xlrd
 PySimpleGUI
-linkedin_api
+linkedin_api~=2.0.0a
 ujson
