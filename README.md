@@ -5,7 +5,9 @@ Simplifying and automating Linkedin profile scraping with Python 3
 
 Liscrape parses various useful bits of profile information to a spreadsheet, simplifying contact information collection quite a bit. Do note, that this is not a script that does everything for you: this is a GUI program intended for automating the copy-paste work. 
 
-To run the program, simply run `liscrape/liscrape/liscrape.py` through Python 3. If you need/want to bundle the program into a distributable .exe-file, use the included `build_exe.sh` file, found in `liscrape/liscrape/utils/build_exe.sh`. 
+To run the program, you must first install the requirements with `pip3 install -r requirements.txt`.
+
+Then, simply run `liscrape/liscrape/liscrape.py` through Python 3. If you need/want to bundle the program into a distributable .exe-file, use the included `build_exe.sh` file, found in `liscrape/liscrape/utils/build_exe.sh`. 
 
 
 ## Known issues
